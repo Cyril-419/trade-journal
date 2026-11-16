@@ -2,10 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Cyril's Trade Journal</title>
+  <meta name="description" content="Log trades, track win rate and P&L, and spot patterns in your trading." />
   <link rel="stylesheet" href="styles.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script src="stats.js" defer></script>
+  <script src="app.js" defer></script>
 </head>
 <body data-theme="dark">
   <div class="app">
@@ -13,9 +16,9 @@
     <aside class="sidebar">
       <div class="sidebar-header">
         <div class="sidebar-logo">📊 Journal</div>
-        <button id="sidebarToggle">☰</button>
+        <button id="sidebarToggle" class="icon-btn" aria-label="Toggle menu" aria-expanded="false">☰</button>
       </div>
-      <nav class="sidebar-nav collapsed">
+      <nav class="sidebar-nav" id="sidebarNav">
         <button data-page="dashboard" class="nav-link active">Dashboard</button>
         <button data-page="journal" class="nav-link">Journal</button>
         <button data-page="analytics" class="nav-link">Analytics</button>
@@ -28,32 +31,152 @@
     <div class="main">
       <header class="main-header">
         <h1>Cyril's Trade Journal</h1>
-        <div>
-          <button id="exportCSV">📤 Export CSV</button>
-          <button id="themeToggle">🌗</button>
+        <div class="header-actions">
+          <button id="addTradeBtn" class="btn primary">+ Add trade</button>
+          <button id="exportCSV" class="btn">📤 Export CSV</button>
+          <button id="themeToggle" class="icon-btn" aria-label="Toggle light/dark theme">🌗</button>
         </div>
       </header>
 
       <main class="page-container">
         <!-- Dashboard -->
-        <section id="dashboard-page" class="page active fade-in">
+        <section id="dashboard-page" class="page active">
           <h2>Dashboard</h2>
           <div class="metrics">
-            <div class="card">Total Trades: <span id="totalTrades">0</span></div>
-            <div class="card">Win Rate: <span id="winRate">0%</span></div>
-            <div class="card">Avg PnL: <span id="avgPnl">$0.00</span></div>
+            <div class="card"><span class="label">Net P&amp;L</span><span id="netPnl" class="value">$0.00</span></div>
+            <div class="card"><span class="label">Total trades</span><span id="totalTrades" class="value">0</span></div>
+            <div class="card"><span class="label">Win rate</span><span id="winRate" class="value">0%</span></div>
+            <div class="card"><span class="label">Profit factor</span><span id="profitFactor" class="value">–</span></div>
+            <div class="card"><span class="label">Avg win</span><span id="avgWin" class="value">$0.00</span></div>
+            <div class="card"><span class="label">Avg loss</span><span id="avgLoss" class="value">$0.00</span></div>
+            <div class="card"><span class="label">Max drawdown</span><span id="maxDrawdown" class="value">$0.00</span></div>
+            <div class="card"><span class="label">Account balance</span><span id="balance" class="value">$0.00</span></div>
           </div>
-          <div class="chart-section">
-            <canvas id="winLossChart" height="100"></canvas>
+          <div class="grid-2">
+            <div class="panel">
+              <h3>Equity curve</h3>
+              <div class="chart-box"><canvas id="equityChart"></canvas></div>
+            </div>
+            <div class="panel">
+              <h3>Wins vs losses</h3>
+              <div class="chart-box"><canvas id="winLossChart"></canvas></div>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>Recent trades</h3>
+            <div id="recentTrades"></div>
           </div>
         </section>
-        <!-- Other sections omitted for brevity -->
+
+        <!-- Journal -->
+        <section id="journal-page" class="page">
+          <h2>Journal</h2>
+          <div class="toolbar">
+            <input id="searchInput" type="search" placeholder="Search symbol, setup or notes…" aria-label="Search trades" />
+            <select id="sideFilter" aria-label="Filter by side">
+              <option value="">All sides</option>
+              <option value="long">Long</option>
+              <option value="short">Short</option>
+            </select>
+            <select id="resultFilter" aria-label="Filter by result">
+              <option value="">All results</option>
+              <option value="win">Winners</option>
+              <option value="loss">Losers</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table class="trades-table">
+              <thead>
+                <tr>
+                  <th data-sort="date">Date</th>
+                  <th data-sort="symbol">Symbol</th>
+                  <th data-sort="side">Side</th>
+                  <th data-sort="qty" class="num">Qty</th>
+                  <th data-sort="entry" class="num">Entry</th>
+                  <th data-sort="exit" class="num">Exit</th>
+                  <th data-sort="pnl" class="num">P&amp;L</th>
+                  <th data-sort="setup">Setup</th>
+                  <th>Notes</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="tradesBody"></tbody>
+            </table>
+          </div>
+          <p id="emptyJournal" class="empty hidden">No trades yet. Click <strong>+ Add trade</strong>, or load demo data from Settings.</p>
+        </section>
+
+        <!-- Analytics -->
+        <section id="analytics-page" class="page">
+          <h2>Analytics</h2>
+          <div class="grid-2">
+            <div class="panel"><h3>P&amp;L by symbol</h3><div class="chart-box"><canvas id="symbolChart"></canvas></div></div>
+            <div class="panel"><h3>P&amp;L by setup</h3><div class="chart-box"><canvas id="setupChart"></canvas></div></div>
+            <div class="panel"><h3>P&amp;L by weekday</h3><div class="chart-box"><canvas id="weekdayChart"></canvas></div></div>
+            <div class="panel"><h3>Long vs short</h3><div class="chart-box"><canvas id="sideChart"></canvas></div></div>
+          </div>
+        </section>
+
+        <!-- Calendar -->
+        <section id="calendar-page" class="page">
+          <div class="calendar-head">
+            <button id="prevMonth" class="btn" aria-label="Previous month">‹</button>
+            <h2 id="calendarTitle">Month</h2>
+            <button id="nextMonth" class="btn" aria-label="Next month">›</button>
+          </div>
+          <div id="calendarGrid" class="calendar-grid"></div>
+          <p id="monthSummary" class="muted"></p>
+        </section>
+
+        <!-- Settings -->
+        <section id="settings-page" class="page">
+          <h2>Settings</h2>
+          <div class="panel settings">
+            <label>Starting balance ($)
+              <input id="startingBalance" type="number" min="0" step="0.01" />
+            </label>
+            <div class="settings-row">
+              <label class="btn">📥 Import CSV
+                <input id="importCSV" type="file" accept=".csv,text/csv" hidden />
+              </label>
+              <button id="loadDemo" class="btn">Load demo data</button>
+              <button id="clearAll" class="btn danger">Delete all trades</button>
+            </div>
+            <p class="muted">CSV columns: <code>date, symbol, side, qty, entry, exit, fees, setup, notes</code>. Dates as YYYY-MM-DD.</p>
+            <p class="muted">Your trades are saved only in this browser (localStorage). Export a CSV regularly as a backup.</p>
+          </div>
+        </section>
       </main>
     </div>
   </div>
 
-  <!-- Modal omitted for brevity -->
+  <!-- Add / edit trade modal -->
+  <dialog id="tradeModal">
+    <form id="tradeForm" method="dialog" novalidate>
+      <h3 id="modalTitle">Add trade</h3>
+      <div class="form-grid">
+        <label>Date <input name="date" type="date" required /></label>
+        <label>Symbol <input name="symbol" type="text" maxlength="12" placeholder="AAPL" required /></label>
+        <label>Side
+          <select name="side"><option value="long">Long</option><option value="short">Short</option></select>
+        </label>
+        <label>Quantity <input name="qty" type="number" min="0" step="any" required /></label>
+        <label>Entry price <input name="entry" type="number" min="0" step="any" required /></label>
+        <label>Exit price <input name="exit" type="number" min="0" step="any" required /></label>
+        <label>Fees <input name="fees" type="number" min="0" step="any" value="0" /></label>
+        <label>Setup <input name="setup" type="text" maxlength="40" list="setupList" placeholder="breakout" /></label>
+      </div>
+      <datalist id="setupList"></datalist>
+      <label>Notes <textarea name="notes" rows="3" maxlength="1000" placeholder="Why did you take it? What would you do differently?"></textarea></label>
+      <p id="formError" class="error" role="alert"></p>
+      <p id="pnlPreview" class="muted"></p>
+      <div class="modal-actions">
+        <button type="button" id="cancelTrade" class="btn">Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
 
-  <script src="app.js"></script>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
